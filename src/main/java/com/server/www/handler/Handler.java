@@ -4,8 +4,6 @@ import com.server.www.response.builder.ResponseBuilder;
 
 import java.io.*;
 import java.net.Socket;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.logging.Logger;
@@ -14,7 +12,6 @@ public class Handler implements Runnable{
     private final Logger logger;
     private static final String path = "D:\\trash\\server_logs\\handlers\\";
     private final Socket socket;
-    private static final Date date = new Date();
 
     public Handler(final Socket socket){
         this.socket = socket;
@@ -34,15 +31,14 @@ public class Handler implements Runnable{
     }
 
     private void handle() throws IOException {
-        String filePath = path+socket.getInetAddress().toString().substring(1).replace(':', '_') + date.toString().replace(':', '_') + ".txt";
+        String filePath = path+socket.getInetAddress().toString().substring(1).replace(':', '_') + new Date().toString().replace(':', '_') + ".txt";
         logger.info("log path: " + filePath);
         try(OutputStream responseOutput = socket.getOutputStream();
             BufferedReader requestReader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             Writer fileLogger = new PrintWriter(new FileOutputStream(filePath))){
-            String requestLine = null;
             logRequestPacket(requestReader, fileLogger);
 
-            responseOutput.write(ResponseBuilder.buildDefault().getBytes(StandardCharsets.UTF_8));
+            responseOutput.write(ResponseBuilder.buildHtml("./src/main/resources/WE-INF/index.html").getBytes(StandardCharsets.UTF_8));
             logger.info("Handling done");
         }
         socket.close();

@@ -3,13 +3,13 @@ package com.server.www.Impl;
 import com.server.www.Server;
 import com.server.www.exception.ServerException;
 import com.server.www.handler.Handler;
+import com.server.www.handler.HandlerPoolExecutor;
 import com.server.www.listener.Listener;
+import com.server.www.pool.SocketPool;
 
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Queue;
-import java.util.concurrent.*;
 import java.util.logging.Logger;
 
 import static com.server.www.config.Config.*;
@@ -17,54 +17,51 @@ import static com.server.www.config.Config.*;
 public class ServerImpl implements Server
 {
     private final Logger logger;
-    private final Queue<Socket> socketPool;
+    private final SocketPool socketPool;
     private Listener listener;
-    private Thread listenerThread;
-    private ThreadPoolExecutor handleExecutor;
+    private final HandlerPoolExecutor handleExecutor;
     private boolean runnable;
-    public ServerImpl(int port)
-    {
+
+    public ServerImpl(int port) {
         logger = Logger.getLogger(this.getClass().getName());
-        socketPool = new ArrayBlockingQueue<>(SOCKET_POOL_SIZE);
-        initHandleExecute();
+        socketPool = new SocketPool();
+        handleExecutor = new HandlerPoolExecutor();
         runnable = true;
         try
         {
-            initListener(port);
-            startListening();
-        }catch(IOException i)
+            listener = new Listener(getServerSocket(port), socketPool);
+        }catch(IOException exception)
         {
             logger.warning("ServerImpl instance initialisation failed.");
         }
     }
 
-    private static void accept(Socket socket) {
+    @Override
+    public void run() throws ServerException {
         try {
-            socket.close();
-        } catch (IOException ignored) {
+            listener.start();
+            activity();
+        } catch (InterruptedException | IOException e) {
+            logger.warning(e.toString());
+            throw new ServerException(e);
         }
     }
 
-    private void initListener(int port) throws IOException {
-        ServerSocket serverSocket = getServerSocket(port);
-        listener = new Listener(serverSocket, socketPool);
+    @Override
+    public void stop(){
+        runnable = false;
     }
 
-    private void initHandleExecute() {
-        handleExecutor = new ThreadPoolExecutor(HANDLER_CORE_POOL_SIZE, HANDLER_MAX_POOL_SIZE, HANDLER_ALIVE_TIME, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
-        handleExecutor.setRejectedExecutionHandler((runnable,executor)-> logger.warning("handlers are full. Connection rejected"));
-        logger.info("HandleExecutor initialize.");
-    }
-
-    private void startListening() {
-        listenerThread = new Thread(listener);
-        listenerThread.start();
-        logger.info("Listener thread started.");
+    @Override
+    public void close() throws Exception {
+        handleExecutor.close();
+        listener.close();
+        socketPool.close();
     }
 
     private ServerSocket getServerSocket(int port) throws IOException {
         ServerSocket serverSocket = new ServerSocket(port);
-        serverSocket.setSoTimeout(1000);
+        serverSocket.setSoTimeout(SERVER_SOCKET_POLLING_TIMEOUT);
         logger.info("ServerSocket initialized");
         return serverSocket;
     }
@@ -78,31 +75,8 @@ public class ServerImpl implements Server
     }
 
     private void waitRequest() throws InterruptedException {
-        while (socketPool.isEmpty() && runnable){
-            synchronized (this){
-                this.wait(POLLING_TIMEOUT);
-            }
+        while (socketPool.isEmpty() && runnable) synchronized (this) {
+            this.wait(SOCKET_POOL_POLLING_TIMEOUT);
         }
-    }
-
-    public void run() throws ServerException {
-        try {
-            activity();
-        } catch (InterruptedException | IOException e) {
-            throw new ServerException(e);
-        }
-    }
-
-
-    @Override
-    public void close() throws Exception {
-        handleExecutor.shutdown();
-        listener.stop();
-        listenerThread.join(JOIN_TIMEOUT);
-        if(!listener.isRunnable()){
-            listener.close();
-        }
-        socketPool.forEach(ServerImpl::accept);
-
     }
 }
