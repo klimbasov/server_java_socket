@@ -1,48 +1,65 @@
-package com.server.www.Impl;// import statements
+package com.server.www.Impl;
 
 import com.server.www.Server;
+import com.server.www.exception.ServerException;
+import com.server.www.handler.Handler;
+import com.server.www.listener.Listener;
 
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Queue;
-import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.*;
 import java.util.logging.Logger;
 
-import static java.util.Objects.isNull;
-import static java.util.Objects.nonNull;
+import static com.server.www.config.Config.*;
 
-public class ServerImpl implements Server, Runnable
+public class ServerImpl implements Server
 {
-    private static final int SOCKET_POOL_SIZE = 10;
-    private static final int POLLING_TIMEOUT = 1000;
     private final Logger logger;
     private final Queue<Socket> socketPool;
     private Listener listener;
     private Thread listenerThread;
+    private ThreadPoolExecutor handleExecutor;
     private boolean runnable;
-
     public ServerImpl(int port)
     {
         logger = Logger.getLogger(this.getClass().getName());
-        socketPool = new ArrayBlockingQueue(SOCKET_POOL_SIZE);
+        socketPool = new ArrayBlockingQueue<>(SOCKET_POOL_SIZE);
+        initHandleExecute();
         runnable = true;
         try
         {
-            ServerSocket serverSocket = getServerSocket(port);
-            listener = new Listener(serverSocket, socketPool);
-            startListenerThread();
-        }
-        // handling errors
-        catch(IOException i)
+            initListener(port);
+            startListening();
+        }catch(IOException i)
         {
-            logger.warning("ServerImpl instance initialisation fails.");
+            logger.warning("ServerImpl instance initialisation failed.");
         }
     }
 
-    private void startListenerThread() {
+    private static void accept(Socket socket) {
+        try {
+            socket.close();
+        } catch (IOException ignored) {
+        }
+    }
+
+    private void initListener(int port) throws IOException {
+        ServerSocket serverSocket = getServerSocket(port);
+        listener = new Listener(serverSocket, socketPool);
+    }
+
+    private void initHandleExecute() {
+        handleExecutor = new ThreadPoolExecutor(HANDLER_CORE_POOL_SIZE, HANDLER_MAX_POOL_SIZE, HANDLER_ALIVE_TIME, TimeUnit.MILLISECONDS, new LinkedBlockingQueue<>());
+        handleExecutor.setRejectedExecutionHandler((runnable,executor)-> logger.warning("handlers are full. Connection rejected"));
+        logger.info("HandleExecutor initialize.");
+    }
+
+    private void startListening() {
         listenerThread = new Thread(listener);
         listenerThread.start();
+        logger.info("Listener thread started.");
     }
 
     private ServerSocket getServerSocket(int port) throws IOException {
@@ -55,73 +72,37 @@ public class ServerImpl implements Server, Runnable
     private void activity() throws InterruptedException, IOException {
         while (runnable){
             waitRequest();
-            Socket socket = socketPool.peek();
-            Writer responseWriter = new PrintWriter(socket.getOutputStream());
-            Reader requestReader = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            Socket socket = socketPool.poll();
+            handleExecutor.execute(new Handler(socket));
         }
     }
 
     private void waitRequest() throws InterruptedException {
         while (socketPool.isEmpty() && runnable){
-            this.wait(POLLING_TIMEOUT);
-        }
-    }
-
-    @Override
-    public void run() {
-        activity();
-    }
-
-
-    @Override
-    public void close() throws Exception {
-
-    }
-}
-
-class Listener implements Runnable, AutoCloseable{
-    private final Logger logger;
-    private final Queue<Socket> socketPool;
-    private final ServerSocket serverSocket;
-    private boolean runnable;
-
-    public Listener(final ServerSocket serverSocket, Queue<Socket> socketPool){
-        this.logger = Logger.getLogger(this.getClass().getName());
-        this.serverSocket = serverSocket;
-        this.socketPool = socketPool;
-        this.runnable = false;
-    }
-
-    @Override
-    public void run() {
-        try {
-            listen();
-        } catch (IOException | InterruptedException e) {
-            logger.warning(e.getMessage());
-            runnable = false;
-        }
-    }
-    private void listen() throws IOException, InterruptedException {
-        while (runnable){
-            Socket socket = serverSocket.accept();
-            if(nonNull(socket)){
-                logger.info("get socket from " + socket.getInetAddress().toString());
-                while (!socketPool.offer(socket) && runnable){
-                    this.wait(1000);
-                }
+            synchronized (this){
+                this.wait(POLLING_TIMEOUT);
             }
         }
     }
 
-    public synchronized void stop(){
-        runnable = false;
+    public void run() throws ServerException {
+        try {
+            activity();
+        } catch (InterruptedException | IOException e) {
+            throw new ServerException(e);
+        }
     }
-    public boolean isRunnable(){
-        return runnable;
-    }
+
 
     @Override
     public void close() throws Exception {
+        handleExecutor.shutdown();
+        listener.stop();
+        listenerThread.join(JOIN_TIMEOUT);
+        if(!listener.isRunnable()){
+            listener.close();
+        }
+        socketPool.forEach(ServerImpl::accept);
 
     }
 }
