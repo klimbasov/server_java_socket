@@ -1,5 +1,7 @@
 package com.server.www.handler;
 
+import com.server.www.handler.impl.DefaultSocketHandler;
+
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
@@ -17,7 +19,7 @@ public class HandlerPoolExecutor implements AutoCloseable{
         logger.info("HandleExecutor initialize.");
     }
 
-    public void execute(Handler handler){
+    public void execute(DefaultSocketHandler handler){
         if(isNull(handler)){
             throw new IllegalArgumentException("Null handler passed");
         }

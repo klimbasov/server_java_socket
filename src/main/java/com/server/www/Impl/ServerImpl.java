@@ -2,9 +2,9 @@ package com.server.www.Impl;
 
 import com.server.www.Server;
 import com.server.www.exception.ServerException;
-import com.server.www.handler.Handler;
+import com.server.www.handler.impl.DefaultSocketHandler;
 import com.server.www.handler.HandlerPoolExecutor;
-import com.server.www.listener.Listener;
+import com.server.www.listener.ServerSocketListener;
 import com.server.www.pool.SocketPool;
 
 import java.io.*;
@@ -18,7 +18,7 @@ public class ServerImpl implements Server
 {
     private final Logger logger;
     private final SocketPool socketPool;
-    private Listener listener;
+    private ServerSocketListener listener;
     private final HandlerPoolExecutor handleExecutor;
     private boolean runnable;
 
@@ -29,7 +29,7 @@ public class ServerImpl implements Server
         runnable = true;
         try
         {
-            listener = new Listener(getServerSocket(port), socketPool);
+            listener = new ServerSocketListener(getServerSocket(port), socketPool);
         }catch(IOException exception)
         {
             logger.warning("ServerImpl instance initialisation failed.");
@@ -70,7 +70,7 @@ public class ServerImpl implements Server
         while (runnable){
             waitRequest();
             Socket socket = socketPool.poll();
-            handleExecutor.execute(new Handler(socket));
+            handleExecutor.execute(new DefaultSocketHandler(socket));   //todo unification socket handling
         }
     }
 

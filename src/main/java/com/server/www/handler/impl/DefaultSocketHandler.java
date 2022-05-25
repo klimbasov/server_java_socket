@@ -1,5 +1,6 @@
-package com.server.www.handler;
+package com.server.www.handler.impl;
 
+import com.server.www.handler.SocketHandler;
 import com.server.www.response.builder.ResponseBuilder;
 
 import java.io.*;
@@ -8,12 +9,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.logging.Logger;
 
-public class Handler implements Runnable{
+public class DefaultSocketHandler implements SocketHandler {
     private final Logger logger;
     private static final String path = "D:\\trash\\server_logs\\handlers\\";
     private final Socket socket;
 
-    public Handler(final Socket socket){
+    public DefaultSocketHandler(final Socket socket){
         this.socket = socket;
         this.logger = Logger.getLogger(this.getClass().getName()+ this);
     }

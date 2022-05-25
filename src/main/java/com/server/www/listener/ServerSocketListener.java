@@ -10,14 +10,14 @@ import java.util.logging.Logger;
 import static com.server.www.config.Config.JOIN_TIMEOUT;
 import static java.util.Objects.nonNull;
 
-public class Listener implements AutoCloseable, Runnable{
+public class ServerSocketListener implements AutoCloseable, Runnable{
     private final Thread listenerThread;
     private final Logger logger;
     private final SocketPool socketPool;
     private final ServerSocket serverSocket;
     private boolean runnable;
 
-    public Listener(final ServerSocket serverSocket, final SocketPool socketPool){
+    public ServerSocketListener(final ServerSocket serverSocket, final SocketPool socketPool){
         this.listenerThread = new Thread(this);
         this.logger = Logger.getLogger(this.getClass().getName());
         this.serverSocket = serverSocket;
